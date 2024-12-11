@@ -1,0 +1,177 @@
+diff --git a/configs/devices/arm-softmmu/default.mak b/configs/devices/arm-softmmu/default.mak
+index 57ef1b8..6dda246 100644
+--- a/configs/devices/arm-softmmu/default.mak
++++ b/configs/devices/arm-softmmu/default.mak
+@@ -6,39 +6,40 @@
+ # CONFIG_TEST_DEVICES=n
+ 
+ # Boards are selected by default, uncomment to keep out of the build.
+-# CONFIG_ARM_VIRT=n
++#CONFIG_ARM_VIRT=n
++# CONFIG_MY_BOARD=n
+ 
+ # These are selected by default when TCG is enabled, uncomment them to
+ # keep out of the build.
+-# CONFIG_CUBIEBOARD=n
+-# CONFIG_EXYNOS4=n
+-# CONFIG_HIGHBANK=n
+-# CONFIG_INTEGRATOR=n
+-# CONFIG_FSL_IMX31=n
+-# CONFIG_MUSICPAL=n
+-# CONFIG_MPS3R=n
+-# CONFIG_MUSCA=n
+-# CONFIG_SX1=n
+-# CONFIG_STELLARIS=n
+-# CONFIG_STM32VLDISCOVERY=n
+-# CONFIG_B_L475E_IOT01A=n
+-# CONFIG_REALVIEW=n
+-# CONFIG_VERSATILE=n
+-# CONFIG_VEXPRESS=n
+-# CONFIG_ZYNQ=n
+-# CONFIG_NPCM7XX=n
+-# CONFIG_COLLIE=n
+-# CONFIG_ASPEED_SOC=n
+-# CONFIG_NETDUINO2=n
+-# CONFIG_NETDUINOPLUS2=n
+-# CONFIG_OLIMEX_STM32_H405=n
+-# CONFIG_MPS2=n
+-# CONFIG_RASPI=n
+-# CONFIG_DIGIC=n
+-# CONFIG_SABRELITE=n
+-# CONFIG_EMCRAFT_SF2=n
+-# CONFIG_MICROBIT=n
+-# CONFIG_FSL_IMX25=n
+-# CONFIG_FSL_IMX7=n
+-# CONFIG_FSL_IMX6UL=n
+-# CONFIG_ALLWINNER_H3=n
++CONFIG_CUBIEBOARD=n
++CONFIG_EXYNOS4=n
++CONFIG_HIGHBANK=n
++CONFIG_INTEGRATOR=n
++CONFIG_FSL_IMX31=n
++CONFIG_MUSICPAL=n
++CONFIG_MPS3R=n
++CONFIG_MUSCA=n
++CONFIG_SX1=n
++CONFIG_STELLARIS=n
++CONFIG_STM32VLDISCOVERY=n
++CONFIG_B_L475E_IOT01A=n
++CONFIG_REALVIEW=n
++CONFIG_VERSATILE=n
++CONFIG_VEXPRESS=n
++CONFIG_ZYNQ=n
++CONFIG_NPCM7XX=n
++CONFIG_COLLIE=n
++CONFIG_ASPEED_SOC=n
++CONFIG_NETDUINO2=n
++CONFIG_NETDUINOPLUS2=n
++CONFIG_OLIMEX_STM32_H405=n
++CONFIG_MPS2=n
++CONFIG_RASPI=n
++CONFIG_DIGIC=n
++CONFIG_SABRELITE=n
++CONFIG_EMCRAFT_SF2=n
++CONFIG_MICROBIT=n
++CONFIG_FSL_IMX25=n
++CONFIG_FSL_IMX7=n
++CONFIG_FSL_IMX6UL=n
++CONFIG_ALLWINNER_H3=n
+diff --git a/hw/arm/Kconfig b/hw/arm/Kconfig
+index 1b25e73..1bee902 100644
+--- a/hw/arm/Kconfig
++++ b/hw/arm/Kconfig
+@@ -1,3 +1,8 @@
++config MY_BOARD
++    bool
++    default y
++    depends on ARM
++
+ config ARM_VIRT
+     bool
+     default y
+diff --git a/hw/arm/meson.build b/hw/arm/meson.build
+index 490234b..2011f41 100644
+--- a/hw/arm/meson.build
++++ b/hw/arm/meson.build
+@@ -1,5 +1,6 @@
+ arm_ss = ss.source_set()
+ arm_ss.add(files('boot.c'))
++arm_ss.add(when: 'CONFIG_MY_BOARD', if_true: files('my-board.c'))
+ arm_ss.add(when: 'CONFIG_ARM_VIRT', if_true: files('virt.c'))
+ arm_ss.add(when: 'CONFIG_ACPI', if_true: files('virt-acpi-build.c'))
+ arm_ss.add(when: 'CONFIG_DIGIC', if_true: files('digic_boards.c'))
+diff --git a/hw/arm/my-board.c b/hw/arm/my-board.c
+new file mode 100644
+index 0000000..aff8a40
+--- /dev/null
++++ b/hw/arm/my-board.c
+@@ -0,0 +1,69 @@
++#include "qemu/osdep.h"
++#include "qemu/datadir.h"
++#include "qemu/units.h"
++#include "qemu/option.h"
++#include "monitor/qdev.h"
++#include "hw/sysbus.h"
++#include "hw/arm/boot.h"
++#include "hw/arm/primecell.h"
++#include "hw/arm/virt.h"
++#include "hw/block/flash.h"
++#include "hw/vfio/vfio-calxeda-xgmac.h"
++#include "hw/vfio/vfio-amd-xgbe.h"
++#include "hw/display/ramfb.h"
++#include "net/net.h"
++#include "sysemu/device_tree.h"
++#include "sysemu/numa.h"
++#include "sysemu/runstate.h"
++#include "sysemu/tpm.h"
++#include "sysemu/tcg.h"
++#include "sysemu/kvm.h"
++#include "sysemu/hvf.h"
++#include "sysemu/qtest.h"
++#include "hw/loader.h"
++#include "qapi/error.h"
++#include "qemu/bitops.h"
++#include "qemu/error-report.h"
++#include "qemu/module.h"
++#include "hw/pci-host/gpex.h"
++#include "hw/virtio/virtio-pci.h"
++#include "hw/core/sysbus-fdt.h"
++#include "hw/platform-bus.h"
++#include "hw/qdev-properties.h"
++#include "hw/arm/fdt.h"
++#include "hw/intc/arm_gic.h"
++#include "hw/intc/arm_gicv3_common.h"
++#include "hw/intc/arm_gicv3_its_common.h"
++#include "hw/irq.h"
++#include "kvm_arm.h"
++#include "hvf_arm.h"
++#include "hw/firmware/smbios.h"
++#include "qapi/visitor.h"
++#include "qapi/qapi-visit-common.h"
++#include "qapi/qmp/qlist.h"
++#include "standard-headers/linux/input.h"
++#include "hw/arm/smmuv3.h"
++#include "hw/acpi/acpi.h"
++#include "target/arm/cpu-qom.h"
++#include "target/arm/internals.h"
++#include "target/arm/multiprocessing.h"
++#include "target/arm/gtimer.h"
++#include "hw/mem/pc-dimm.h"
++#include "hw/mem/nvdimm.h"
++#include "hw/acpi/generic_event_device.h"
++#include "hw/virtio/virtio-md-pci.h"
++#include "hw/virtio/virtio-iommu.h"
++#include "hw/char/pl011.h"
++#include "qemu/guest-random.h"
++
++static void my_board_init(MachineState *machine) {
++    printf("Hello, world!\n");
++}
++
++static void my_board_machine_init(MachineClass *mc)
++{
++    mc->desc = "My Board by rsc";
++    mc->init = my_board_init;
++}
++
++DEFINE_MACHINE("my-board", my_board_machine_init)
